@@ -177,29 +177,32 @@ WHERE status = 'Confirmed';
 
 ## 4. Process Flowcharts & Workflows
 
-### 4.1 Ticket Booking & Concession Allocation Flowchart (FR-1 & Unique Use Case)
+### 4.1 Standard Flowchart: Ticket Booking & Concession Allocation (FR-1 & Unique Use Case)
+Standard flowchart utilizing ISO/ANSI flowchart shapes: **Terminator capsules** (Start/End), **Input/Output parallelograms**, **Process rectangles**, **Decision diamonds** (Yes/No branches), and **Database cylinders** (SQLite queries):
+
+![Generic Flowchart - Booking Process](screenshots/flowchart_booking_process.png)
 
 ```mermaid
 flowchart TD
-    Start([User Initiates Booking]) --> SelectRoute[Select Route & Travel Date]
+    Start([User Initiates Booking]) --> SelectRoute[/Input: Select Route & Travel Date/]
     SelectRoute --> QueryDB[(Query SQLite for Booked Seats)]
     QueryDB --> RenderGrid[Render 2x2 Interactive Seat Grid\nGreen: Available | Red: Booked | Amber: Priority]
-    RenderGrid --> ClickSeat{User Clicks Seat}
+    RenderGrid --> ClickSeat[/User Clicks Desired Seat/]
     
-    ClickSeat -- Seat is Booked [Red] --> AlertOccupied[Show Warning: Seat Already Booked]
+    ClickSeat --> IsOccupied{Is Seat Already\nOccupied?}
+    IsOccupied -- Yes --> AlertOccupied[Show Warning: Seat Already Booked]
     AlertOccupied --> ClickSeat
     
-    ClickSeat -- Seat is Available --> CheckPriority{Is Seat in Priority Row?\nRows 1 & 2}
-    
+    IsOccupied -- No --> CheckPriority{Is Seat in Priority Row?\nRows 1 & 2}
     CheckPriority -- Yes --> PromptPriority[Verify Senior / PWD Eligibility]
-    CheckPriority -- No --> SelectSeat[Highlight Seat Blue & Display Selection]
+    CheckPriority -- No --> SelectSeat[Highlight Seat Blue [✓]]
     PromptPriority --> SelectSeat
     
-    SelectSeat --> EnterDetails[Enter Passenger Name & Mobile Phone]
+    SelectSeat --> EnterDetails[/Input: Name, Phone & Category/]
     EnterDetails --> SelectCategory{Select Classification}
     
     SelectCategory -- Regular --> CalcRegular[Base Fare Applied\n0% Discount]
-    SelectCategory -- Senior / PWD / Student --> RequireID[Enable Concession ID Entry\n(Min 4 chars)]
+    SelectCategory -- Senior / PWD / Student --> RequireID[/Input: Concession ID/]
     RequireID --> CalcDiscount[Apply 20% Concession Deduction\nFinal = Base * 0.80]
     
     CalcRegular --> SubmitBooking[Click Confirm & Issue Ticket]
@@ -218,58 +221,30 @@ flowchart TD
     RefreshUI --> End([Booking Complete])
 ```
 
-### 4.2 Ticket Cancellation & Seat Release Flowchart (FR-2)
+### 4.2 Standard Flowchart: Ticket Cancellation & Seat Release (FR-2)
+Standard flowchart for lifecycle ticket cancellation and automatic seat restoration:
 
-```mermaid
-flowchart TD
-    StartCancel([Initiate Ticket Cancellation]) --> InputLookup[Enter Ticket ID or 8-char Reference Code]
-    InputLookup --> QueryTicket[(Query SQLite tickets Table)]
-    QueryTicket --> FoundCheck{Ticket Exists?}
-    
-    FoundCheck -- No --> ShowNotFound[Display Error: Ticket Not Found]
-    FoundCheck -- Yes --> StatusCheck{Is Status Confirmed?}
-    
-    StatusCheck -- Already Cancelled --> ShowAlreadyCancelled[Display Error: Already Cancelled]
-    StatusCheck -- Confirmed --> ConfirmDialog[Display Confirmation Prompt\nwith Refund & Seat Info]
-    
-    ConfirmDialog -- Cancelled by User --> AbortCancel([Operation Aborted])
-    ConfirmDialog -- Confirmed --> ExecuteCancel[(UPDATE tickets\nSET status='Cancelled',\ncancellation_time=NOW())]
-    
-    ExecuteCancel --> ReleaseSeat[Partial Unique Index Excludes Cancelled State]
-    ReleaseSeat --> SeatAvailable[Seat Instantly Released Back to Fleet Inventory]
-    SeatAvailable --> UpdateUI[Update Manage Bookings Treeview\nRecalculate Tab 3 Revenue KPIs]
-    UpdateUI --> EndCancel([Cancellation Complete])
-```
+![Generic Flowchart - Cancellation Process](screenshots/flowchart_cancellation_process.png)
+
+### 4.3 High-Level Architecture & Relational Data Flow
+Layered Model-View-Controller architecture and data flow through SQLite:
+
+![System Architecture & Data Flow](screenshots/flowchart_system_architecture.png)
 
 ---
 
 ## 5. UI Wireframes & Visual Layouts
 
-### 5.1 Tab 1 Wireframe Blueprint: Book Tickets & Visual Seat Map
+Clean component wireframe schematics representing system screens, controls, and workflows:
 
-```
-+--------------------------------------------------------------------------------------------------------+
-| [Header Banner] SmartBus Transit System — Booking & Fleet Management (SQLite / Clam Theme)            |
-+------------------------------------+-----------------------------------+-------------------------------+
-| 1. Select Route & Trip             | 2. Interactive Seat Selection     | 3. Passenger & Concession     |
-|------------------------------------|-----------------------------------|-------------------------------|
-| Transit Route:                     | [ Legend: Avail(G) Prio(A) Sel(B) ]| Passenger Full Name:          |
-| [ RT-101: Manila -> Baguio     v ] | [ FRONT OF BUS • DRIVER CAB ]     | [ Maria Santos              ] |
-| Travel Date (YYYY-MM-DD):          | R1 [01][02]   (Aisle)   [03][04]  | Contact Number:               |
-| [ 2026-09-28                     ] | R2 [05][06]   (Aisle)   [07][08]  | [ 09171234567               ] |
-| [ Update Seat Availability Button] | R3 [09][10]   (Aisle)   [11][12]  | Classification:               |
-|                                    | R4 [13][14]   (Aisle)   [15][16]  | [ Senior Citizen (20% Off) v] |
-| Route & Bus Details:               | R5 [17][18]   (Aisle)   [19][20]  | Concession / OSCA / PWD ID:   |
-| - Origin     : Manila (Cubao)      | R6 [21][22]   (Aisle)   [23][24]  | [ OSCA-77491                ] |
-| - Destination: Baguio City         |                                   | Fare Quotation:               |
-| - Distance   : 245.0 km            | Status:                           |   Base Fare: PHP 580.00       |
-| - Departure  : 08:00 AM            | Selected: Seat #01 (PRIORITY ROW) |   Discount : -PHP 116.00 (20%)|
-| - Base Fare  : PHP 580.00          | Fare    : PHP 580.00              |   Total Due: PHP 464.00       |
-| - Fleet Bus  : DLTB-8012 (Std AC)  |                                   | [ Confirm & Issue Ticket    ] |
-+------------------------------------+-----------------------------------+-------------------------------+
-| Status: Connected to SQLite database 'bus_ticketing.db'. All systems operational.                     |
-+--------------------------------------------------------------------------------------------------------+
-```
+### Tab 1 Wireframe: Book Tickets & Visual Seat Map
+![Tab 1 Wireframe](screenshots/wireframe_tab1_booking.png)
+
+### Tab 2 Wireframe: Manage Bookings & Audit Dossier
+![Tab 2 Wireframe](screenshots/wireframe_tab2_management.png)
+
+### Tab 3 Wireframe: System Overview & Fleet Analytics
+![Tab 3 Wireframe](screenshots/wireframe_tab3_analytics.png)
 
 ---
 
