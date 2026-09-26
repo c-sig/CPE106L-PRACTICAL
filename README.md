@@ -1,16 +1,5 @@
 # SmartBus — Intercity Bus Ticketing & Fleet Reservation System
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![GUI](https://img.shields.io/badge/GUI-Tkinter%20%7C%20Clam%20Theme-orange.svg)]()
-[![Database](https://img.shields.io/badge/Database-SQLite3%20ACID-success.svg)]()
-[![Tests](https://img.shields.io/badge/Unit%20Tests-12%2F12%20Passing-brightgreen.svg)]()
-
-> **Practical Laboratory Assessment Submission**  
-> Architected following software engineering standards from **Lab 2**, **Lab 3**, **Lab 4**, and **Lab 5**.  
-> Features SQLite persistence, strict Object-Oriented encapsulation, 3-tabbed GUI, atomic double-booking prevention, and an interactive visual seat layout with statutory concession verification.
-
----
-
 ## 1. System Requirements Specification
 
 In accordance with software engineering principles, the system is designed around balanced **Functional Requirements (FR)** and **Non-Functional Requirements (NFR)**:

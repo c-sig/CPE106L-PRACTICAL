@@ -56,7 +56,7 @@ class NumberedCanvas(canvas.Canvas):
             self.drawString(36, 762, "SmartBus Transit System — Documentation & Architecture Specification")
             self.setFont("Helvetica", 8)
             self.setFillColor(colors.HexColor("#64748B"))
-            self.drawRightString(576, 762, "Exported from README.md")
+            self.drawRightString(576, 762, " ")
             self.setStrokeColor(colors.HexColor("#CBD5E1"))
             self.setLineWidth(0.75)
             self.line(36, 756, 576, 756)
