@@ -2,18 +2,6 @@
 
 ## 1. System Requirements Specification
 
-In accordance with software engineering principles, the system is designed around balanced **Functional Requirements (FR)** and **Non-Functional Requirements (NFR)**:
-
-| Requirement Classification | Functional Requirements (FR) | Non-Functional Requirements (NFR) |
-| :--- | :--- | :--- |
-| **Core Definition** | Define **what** the system should do (features & system functionality). | Define **how** the system should perform (quality attributes & operational constraints). |
-| **Focus** | Focus on system behavior, user interaction, and transactional operations. | Focus on performance, security, data integrity, and code maintainability. |
-| **Scope of Actions** | Describes specific actions like route querying, seat booking, ticket issuance, and ticket cancellations. | Describes constraints like response times (<100ms), input sanitization, and OOP extensibility. |
-| **Visibility** | Directly visible to users, passengers, and business operations. | Indirectly visible, governing architectural robustness and long-term maintainability. |
-| **Validation Metric** | Output-based validation (e.g., ticket generated with seat assignment, seats released upon cancellation). | Metrics-based validation (e.g., zero double-bookings via SQLite partial unique indexes, regex PII validation). |
-| **Design Driver** | Drives the core user workflows and interactive GUI features. | Influences database constraints, OOP architectural layering, and security protocols. |
-| **Documentation** | Documented using use case specifications, step-by-step user stories, and sequence diagrams. | Documented using technical specs, performance criteria, and data dictionaries. |
-
 ### 1.1 The 2 Functional Requirements (FR)
 
 * **FR-1: Route Schedule Browsing & Interactive Seat Selection**  
