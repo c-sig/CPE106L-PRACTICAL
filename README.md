@@ -23,9 +23,7 @@ In accordance with software engineering principles, the system is designed aroun
 | **Visibility** | Directly visible to users, passengers, and business operations. | Indirectly visible, governing architectural robustness and long-term maintainability. |
 | **Validation Metric** | Output-based validation (e.g., ticket generated with seat assignment, seats released upon cancellation). | Metrics-based validation (e.g., zero double-bookings via SQLite partial unique indexes, regex PII validation). |
 | **Design Driver** | Drives the core user workflows and interactive GUI features. | Influences database constraints, OOP architectural layering, and security protocols. |
-| **Documentation** | Documented using use case specifications, step-by-step user stories, and sequence diagrams. | Documented using technical schemas, class contracts, error codes, and benchmark criteria. |
-
----
+| **Documentation** | Documented using use case specifications, step-by-step user stories, and sequence diagrams. | Documented using technical specs, performance criteria, and data dictionaries. |
 
 ### 1.1 The 2 Functional Requirements (FR)
 
@@ -41,7 +39,7 @@ In accordance with software engineering principles, the system is designed aroun
 
 ---
 
-### 1.2 The 2 Non-Functional Requirements (NFR)
+### 2. The 2 Non-Functional Requirements (NFR)
 
 * **NFR-1: Security, Validation & Tamper Resistance**  
   * *Quality Attribute*: **Security & Data Integrity**
@@ -53,7 +51,7 @@ In accordance with software engineering principles, the system is designed aroun
 
 ---
 
-## 2. Unique System Use Case
+## 3. Unique System Use Case
 
 ### **Interactive Visual Seat Layout Matrix with Senior/PWD Priority Allocation & Concession Discount Engine**
 
@@ -75,9 +73,9 @@ In accordance with software engineering principles, the system is designed aroun
 
 ---
 
-## 3. System Architecture & Relational Schema
+## 4. System Architecture & Relational Schema
 
-### 3.1 Layered Architecture Pattern
+### 4.1 Layered Architecture Pattern
 
 The system follows a Model-View-Controller (MVC) structure decoupled via the Repository/Singleton pattern:
 
@@ -112,7 +110,7 @@ The system follows a Model-View-Controller (MVC) structure decoupled via the Rep
 +-------------------------------------------------------------------------+
 ```
 
-### 3.2 SQLite Relational Database Schema
+### 4.2 SQLite Relational Database Schema
 
 ```sql
 -- 1. Routes Table
@@ -175,9 +173,9 @@ WHERE status = 'Confirmed';
 
 ---
 
-## 4. Process Flowcharts & Workflows
+## 5. Process Flowcharts & Workflows
 
-### 4.1 Standard Flowchart: Ticket Booking & Concession Allocation (FR-1 & Unique Use Case)
+### 5.1 Standard Flowchart: Ticket Booking & Concession Allocation (FR-1 & Unique Use Case)
 Standard flowchart utilizing ISO/ANSI flowchart shapes: **Terminator capsules** (Start/End), **Input/Output parallelograms**, **Process rectangles**, **Decision diamonds** (Yes/No branches), and **Database cylinders** (SQLite queries):
 
 ![Generic Flowchart - Booking Process](screenshots/flowchart_booking_process.png)
@@ -221,21 +219,19 @@ flowchart TD
     RefreshUI --> End([Booking Complete])
 ```
 
-### 4.2 Standard Flowchart: Ticket Cancellation & Seat Release (FR-2)
+### 5.2 Standard Flowchart: Ticket Cancellation & Seat Release (FR-2)
 Standard flowchart for lifecycle ticket cancellation and automatic seat restoration:
 
 ![Generic Flowchart - Cancellation Process](screenshots/flowchart_cancellation_process.png)
 
-### 4.3 High-Level Architecture & Relational Data Flow
+### 5.3 High-Level Architecture & Relational Data Flow
 Layered Model-View-Controller architecture and data flow through SQLite:
 
 ![System Architecture & Data Flow](screenshots/flowchart_system_architecture.png)
 
 ---
 
-## 5. UI Wireframes & Visual Layouts
-
-Clean component wireframe schematics representing system screens, controls, and workflows:
+## 6. UI Wireframes & Visual Layouts
 
 ### Tab 1 Wireframe: Book Tickets & Visual Seat Map
 ![Tab 1 Wireframe](screenshots/wireframe_tab1_booking.png)
@@ -248,9 +244,7 @@ Clean component wireframe schematics representing system screens, controls, and 
 
 ---
 
-## 6. Live Interface Screenshots
-
-All 9 programmatic milestone screenshots have been automatically captured and verified:
+## 7. Live Interface Screenshots
 
 | Milestone & Scenario | Live Screen Capture |
 | :--- | :--- |
@@ -266,9 +260,7 @@ All 9 programmatic milestone screenshots have been automatically captured and ve
 
 ---
 
-## 7. Verification & Test Matrix
-
-The system includes a dedicated test suite (`test_system.py`) executing 12 unit tests:
+## 8. Verification & Test Matrix
 
 | Test ID | Test Method Name | Category | Verification Criteria | Status |
 | :--- | :--- | :--- | :--- | :---: |
@@ -287,7 +279,7 @@ The system includes a dedicated test suite (`test_system.py`) executing 12 unit 
 
 ---
 
-## 8. Installation & Execution Guide
+## 9. Installation & Execution Guide
 
 ### Prerequisites
 * Python 3.10+ (Standard distribution)
@@ -314,7 +306,7 @@ python capture_screenshots.py
 
 ---
 
-## 9. Project Directory Tree
+## 10. Project Directory Tree
 
 ```
 Practical/

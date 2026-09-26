@@ -1,10 +1,14 @@
 """
-Exports the SmartBus Markdown documentation and specifications into a
-professional, publication-quality PDF report with embedded flowcharts,
-wireframes, and verification matrices using ReportLab.
+Converts README.md directly into a publication-quality PDF report.
+Parses Markdown structures (headings, tables, callouts, lists, images, code blocks)
+and converts them into styled ReportLab Flowables.
 """
 import os
-import sys
+import re
+import html
+from markdown_it import MarkdownIt
+from PIL import Image as PILImage
+
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import (
@@ -17,11 +21,10 @@ from reportlab.platypus import (
     PageBreak,
     KeepTogether,
     HRFlowable,
+    Preformatted,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
-from PIL import Image as PILImage
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -48,12 +51,12 @@ class NumberedCanvas(canvas.Canvas):
         self.setFont("Helvetica-Bold", 8)
         self.setFillColor(colors.HexColor("#1F4E79"))
 
-        # Header (pages > 1)
+        # Running header (pages > 1)
         if self._pageNumber > 1:
-            self.drawString(36, 762, "SmartBus Transit System — System Specification, Wireframes & Flowcharts")
+            self.drawString(36, 762, "SmartBus Transit System — Documentation & Architecture Specification")
             self.setFont("Helvetica", 8)
             self.setFillColor(colors.HexColor("#64748B"))
-            self.drawRightString(576, 762, "CPE106L Practical Assessment")
+            self.drawRightString(576, 762, "Exported from README.md")
             self.setStrokeColor(colors.HexColor("#CBD5E1"))
             self.setLineWidth(0.75)
             self.line(36, 756, 576, 756)
@@ -61,7 +64,7 @@ class NumberedCanvas(canvas.Canvas):
         # Footer
         self.setFont("Helvetica", 8)
         self.setFillColor(colors.HexColor("#64748B"))
-        self.drawString(36, 24, "Confidential • Laboratory Submission • SQLite ACID Persistence Engine")
+        self.drawString(36, 24, "SmartBus Transit System • Laboratory Practical • SQLite Relational Engine")
         page_str = f"Page {self._pageNumber} of {page_count}"
         self.drawRightString(576, 24, page_str)
         self.setStrokeColor(colors.HexColor("#CBD5E1"))
@@ -70,25 +73,340 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
-def get_scaled_image(img_path, max_w=520, max_h=620):
-    """Scale image proportionally to fit page boundaries."""
+def get_scaled_image(img_path, max_w=520, max_h=550):
+    """Scale image proportionally to fit printable page boundaries."""
     if not os.path.exists(img_path):
         return None
-    with PILImage.open(img_path) as im:
-        orig_w, orig_h = im.size
-    ratio = min(max_w / orig_w, max_h / orig_h)
-    target_w = orig_w * ratio
-    target_h = orig_h * ratio
-    return Image(img_path, width=target_w, height=target_h)
+    try:
+        with PILImage.open(img_path) as im:
+            orig_w, orig_h = im.size
+        ratio = min(max_w / orig_w, max_h / orig_h)
+        target_w = orig_w * ratio
+        target_h = orig_h * ratio
+        return Image(img_path, width=target_w, height=target_h)
+    except Exception as e:
+        print(f"Warning: Could not load image {img_path}: {e}")
+        return None
 
 
-def generate_pdf():
+def inline_to_reportlab_html(inline_token, md_renderer, md_options):
+    """
+    Convert an inline token's children to ReportLab-compatible XML markup.
+    Replaces <strong> with <b>, <em> with <i>, and <code> with styled font.
+    Ensures self-closing tags like <br/> are strictly formatted for paraparser.
+    """
+    if not inline_token or not inline_token.children:
+        text = html.escape(inline_token.content if inline_token else "")
+        return text
+
+    rendered = md_renderer.renderInline(inline_token.children, md_options, {})
+
+    # Strictly normalize <br> to self-closing <br/> for ReportLab
+    rendered = re.sub(r"<br\s*/?>", "<br/>", rendered, flags=re.IGNORECASE)
+
+    # Transform standard HTML tags to ReportLab Paragraph XML tags
+    rendered = re.sub(r"<strong>(.*?)</strong>", r"<b>\1</b>", rendered, flags=re.DOTALL)
+    rendered = re.sub(r"<em>(.*?)</em>", r"<i>\1</i>", rendered, flags=re.DOTALL)
+    rendered = re.sub(r"<code>(.*?)</code>", r'<font face="Courier" color="#0F172A"><b>\1</b></font>', rendered, flags=re.DOTALL)
+
+    # Remove unsupported HTML image tags inside paragraph text if any
+    rendered = re.sub(r"<img[^>]*>", "", rendered)
+    rendered = re.sub(r"<para>", "", rendered)
+    rendered = re.sub(r"</para>", "", rendered)
+    return rendered
+
+
+def parse_readme_to_flowables(readme_path, base_dir, styles):
+    """
+    Read README.md and parse tokens into ReportLab flowable elements.
+    """
+    with open(readme_path, "r", encoding="utf-8") as f:
+        readme_content = f.read()
+
+    md = MarkdownIt("commonmark").enable("table")
+    tokens = md.parse(readme_content)
+
+    flowables = []
+
+    NAVY = colors.HexColor("#1F4E79")
+    STEEL = colors.HexColor("#2E75B6")
+    DARK = colors.HexColor("#1E293B")
+    BG_CODE = colors.HexColor("#F8FAFC")
+    BORDER_CODE = colors.HexColor("#CBD5E1")
+
+    # Typography styles
+    style_h1 = ParagraphStyle("H1_Custom", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=15, leading=19, textColor=NAVY, spaceBefore=14, spaceAfter=6, keepWithNext=True)
+    style_h2 = ParagraphStyle("H2_Custom", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=NAVY, spaceBefore=12, spaceAfter=5, keepWithNext=True)
+    style_h3 = ParagraphStyle("H3_Custom", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=10, leading=13, textColor=STEEL, spaceBefore=9, spaceAfter=4, keepWithNext=True)
+    style_h4 = ParagraphStyle("H4_Custom", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9, leading=12, textColor=DARK, spaceBefore=6, spaceAfter=3, keepWithNext=True)
+    style_body = ParagraphStyle("Body_Custom", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=12, textColor=DARK, spaceAfter=5)
+    style_bullet = ParagraphStyle("Bullet_Custom", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11.5, textColor=DARK, leftIndent=16, firstLineIndent=-10, spaceAfter=3)
+    style_quote = ParagraphStyle("Quote_Custom", parent=styles["Normal"], fontName="Helvetica-Oblique", fontSize=8.5, leading=12, textColor=NAVY)
+    style_code = ParagraphStyle("Code_Custom", parent=styles["Normal"], fontName="Courier", fontSize=7, leading=9, textColor=colors.HexColor("#0F172A"))
+    style_tbl_hdr = ParagraphStyle("TableHdr", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.white)
+    style_tbl_cell = ParagraphStyle("TableCell", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9.5, textColor=DARK)
+
+    i = 0
+    total_tokens = len(tokens)
+
+    while i < total_tokens:
+        tok = tokens[i]
+
+        # ---------------------------------------------------------------------
+        # 1. HEADINGS (#, ##, ###)
+        # ---------------------------------------------------------------------
+        if tok.type == "heading_open":
+            level = int(tok.tag[1])
+            inline_tok = tokens[i + 1] if i + 1 < total_tokens and tokens[i + 1].type == "inline" else None
+            title_text = inline_to_reportlab_html(inline_tok, md.renderer, md.options) if inline_tok else ""
+
+            # Check if major section (##) should have a page break or separator
+            if level == 1:
+                # Top document title banner
+                banner_data = [[
+                    Paragraph(f"<b>{title_text.upper()}</b>", ParagraphStyle("CoverB", fontName="Helvetica-Bold", fontSize=13, textColor=colors.white)),
+                    Paragraph("<b>SYSTEM SPECIFICATION</b><br/>CPE106L Practical Assessment", ParagraphStyle("CoverSub", fontName="Helvetica", fontSize=8, textColor=colors.HexColor("#D0E1FD"), alignment=2))
+                ]]
+                t_b = Table(banner_data, colWidths=[360, 180])
+                t_b.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), NAVY),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]))
+                flowables.append(t_b)
+                flowables.append(Spacer(1, 8))
+            elif level == 2:
+                # Major section heading
+                if flowables and not isinstance(flowables[-1], PageBreak):
+                    flowables.append(Spacer(1, 4))
+                flowables.append(Paragraph(title_text, style_h2))
+                flowables.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CBD5E1"), spaceBefore=2, spaceAfter=6))
+            elif level == 3:
+                flowables.append(Paragraph(title_text, style_h3))
+            else:
+                flowables.append(Paragraph(title_text, style_h4))
+
+            # Skip ahead past heading_close
+            while i < total_tokens and tokens[i].type != "heading_close":
+                i += 1
+
+        # ---------------------------------------------------------------------
+        # 2. BLOCKQUOTES (> ...)
+        # ---------------------------------------------------------------------
+        elif tok.type == "blockquote_open":
+            quote_text = ""
+            i += 1
+            while i < total_tokens and tokens[i].type != "blockquote_close":
+                if tokens[i].type == "inline":
+                    quote_text += inline_to_reportlab_html(tokens[i], md.renderer, md.options) + " "
+                i += 1
+            # Render blockquote inside callout frame
+            q_table = Table([[Paragraph(quote_text.strip(), style_quote)]], colWidths=[540])
+            q_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F0F9FF")),
+                ("LINEBEFORE", (0, 0), (0, -1), 3.5, STEEL),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            flowables.append(q_table)
+            flowables.append(Spacer(1, 6))
+
+        # ---------------------------------------------------------------------
+        # 3. PARAGRAPHS & STANDALONE IMAGES
+        # ---------------------------------------------------------------------
+        elif tok.type == "paragraph_open":
+            inline_tok = tokens[i + 1] if i + 1 < total_tokens and tokens[i + 1].type == "inline" else None
+            if inline_tok:
+                # Check if paragraph contains images
+                img_tokens = [c for c in (inline_tok.children or []) if c.type == "image"]
+                # Also check if it's badges (e.g. img.shields.io)
+                has_badge = any("shields.io" in (c.attrs.get("src", "")) for c in img_tokens)
+
+                if has_badge:
+                    # Render a clean text badge bar instead of trying to load web SVG badges
+                    flowables.append(Paragraph(
+                        "<b>Technology Stack:</b> Python 3.10+ &nbsp;|&nbsp; Tkinter Clam Theme &nbsp;|&nbsp; SQLite3 ACID Engine &nbsp;|&nbsp; 12/12 Passing Unit Tests",
+                        ParagraphStyle("BadgeBar", parent=style_body, textColor=STEEL, fontName="Helvetica-Bold", fontSize=8)
+                    ))
+                    flowables.append(Spacer(1, 4))
+                elif img_tokens:
+                    # Regular diagram or screenshot images
+                    for im_tok in img_tokens:
+                        src = im_tok.attrs.get("src", "")
+                        alt = im_tok.content or "Diagram"
+                        full_img_path = os.path.normpath(os.path.join(base_dir, src))
+                        rep_img = get_scaled_image(full_img_path, max_w=520, max_h=560)
+                        if rep_img:
+                            # Caption
+                            flowables.append(KeepTogether([
+                                Paragraph(f"<b>Figure:</b> {alt}", ParagraphStyle("Cap", parent=style_body, fontName="Helvetica-Bold", fontSize=8, textColor=NAVY)),
+                                Spacer(1, 2),
+                                rep_img,
+                                Spacer(1, 8),
+                            ]))
+                else:
+                    # Normal prose paragraph
+                    para_html = inline_to_reportlab_html(inline_tok, md.renderer, md.options)
+                    if para_html.strip():
+                        flowables.append(Paragraph(para_html, style_body))
+
+            while i < total_tokens and tokens[i].type != "paragraph_close":
+                i += 1
+
+        # ---------------------------------------------------------------------
+        # 4. TABLES
+        # ---------------------------------------------------------------------
+        elif tok.type == "table_open":
+            table_rows = []
+            current_row = []
+            is_header_row = True
+            i += 1
+
+            while i < total_tokens and tokens[i].type != "table_close":
+                cur_tok = tokens[i]
+                if cur_tok.type in ("th_open", "td_open"):
+                    cell_html = ""
+                    if i + 1 < total_tokens and tokens[i + 1].type == "inline":
+                        inline_cell = tokens[i + 1]
+                        # Check if cell has an image
+                        img_in_cell = [c for c in (inline_cell.children or []) if c.type == "image"]
+                        if img_in_cell:
+                            src = img_in_cell[0].attrs.get("src", "")
+                            alt = img_in_cell[0].content or "Image"
+                            img_path = os.path.normpath(os.path.join(base_dir, src))
+                            cell_img = get_scaled_image(img_path, max_w=240, max_h=120)
+                            if cell_img:
+                                cell_flowable = cell_img
+                            else:
+                                cell_flowable = Paragraph(f"[{alt}]", style_tbl_cell)
+                            current_row.append(cell_flowable)
+                            i += 2
+                            continue
+                        else:
+                            cell_html = inline_to_reportlab_html(inline_cell, md.renderer, md.options)
+                            i += 1
+
+                    style_to_use = style_tbl_hdr if is_header_row else style_tbl_cell
+                    current_row.append(Paragraph(cell_html, style_to_use))
+                elif cur_tok.type == "thead_close":
+                    is_header_row = False
+                elif cur_tok.type == "tr_close":
+                    if current_row:
+                        table_rows.append(current_row)
+                        current_row = []
+                i += 1
+
+            if table_rows:
+                # Compute proportional column widths fitting 540 pt usable width
+                num_cols = max(len(r) for r in table_rows)
+                if num_cols == 3:
+                    col_widths = [120, 210, 210]
+                elif num_cols == 2:
+                    col_widths = [220, 320]
+                elif num_cols == 5:
+                    col_widths = [45, 155, 65, 230, 45]
+                else:
+                    col_w = 540 / num_cols
+                    col_widths = [col_w] * num_cols
+
+                t_table = Table(table_rows, colWidths=col_widths)
+                t_table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]))
+                flowables.append(Spacer(1, 4))
+                flowables.append(t_table)
+                flowables.append(Spacer(1, 6))
+
+        # ---------------------------------------------------------------------
+        # 5. FENCED CODE BLOCKS (``` ... ```)
+        # ---------------------------------------------------------------------
+        elif tok.type == "fence":
+            code_text = tok.content
+            lang = (tok.info or "").strip()
+
+            # Render code inside light-gray padded container
+            # Truncate overly long lines to prevent overflow
+            lines = code_text.splitlines()
+            formatted_lines = []
+            for l in lines:
+                if len(l) > 100:
+                    l = l[:97] + "..."
+                formatted_lines.append(html.escape(l))
+
+            header_text = f"Code Block: {lang.upper()}" if lang else "Code Listing"
+            code_html = "<br/>".join(formatted_lines)
+
+            code_box_data = [
+                [Paragraph(f"<b>{header_text}</b>", ParagraphStyle("CodeHdr", fontName="Helvetica-Bold", fontSize=7.5, textColor=STEEL))],
+                [Paragraph(code_html, style_code)]
+            ]
+            t_code = Table(code_box_data, colWidths=[540])
+            t_code.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), BG_CODE),
+                ("BOX", (0, 0), (-1, -1), 0.8, BORDER_CODE),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.5, BORDER_CODE),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            flowables.append(t_code)
+            flowables.append(Spacer(1, 6))
+
+        # ---------------------------------------------------------------------
+        # 6. BULLET & ORDERED LISTS
+        # ---------------------------------------------------------------------
+        elif tok.type in ("bullet_list_open", "ordered_list_open"):
+            is_ordered = tok.type == "ordered_list_open"
+            list_idx = 1
+            i += 1
+
+            while i < total_tokens and tokens[i].type not in ("bullet_list_close", "ordered_list_close"):
+                if tokens[i].type == "list_item_open":
+                    item_text = ""
+                    i += 1
+                    while i < total_tokens and tokens[i].type != "list_item_close":
+                        if tokens[i].type == "inline":
+                            item_text += inline_to_reportlab_html(tokens[i], md.renderer, md.options) + " "
+                        i += 1
+
+                    bullet_prefix = f"<b>{list_idx}.</b> " if is_ordered else "&bull; "
+                    flowables.append(Paragraph(bullet_prefix + item_text.strip(), style_bullet))
+                    list_idx += 1
+                i += 1
+
+        # ---------------------------------------------------------------------
+        # 7. HORIZONTAL RULES (---)
+        # ---------------------------------------------------------------------
+        elif tok.type == "hr":
+            flowables.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CBD5E1"), spaceBefore=6, spaceAfter=8))
+
+        i += 1
+
+    return flowables
+
+
+def export_readme_to_pdf():
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    readme_path = os.path.join(base_dir, "README.md")
     output_pdf = os.path.join(base_dir, "SmartBus_System_Documentation.pdf")
     readme_pdf = os.path.join(base_dir, "README.pdf")
-    screenshots_dir = os.path.join(base_dir, "screenshots")
 
-    print(f"Building PDF at: {output_pdf}")
+    print(f"Reading source documentation from: {readme_path}")
+    if not os.path.exists(readme_path):
+        raise FileNotFoundError(f"Source file not found: {readme_path}")
 
     doc = SimpleDocTemplate(
         output_pdf,
@@ -101,362 +419,18 @@ def generate_pdf():
 
     styles = getSampleStyleSheet()
 
-    # Custom typography styles
-    NAVY = colors.HexColor("#1F4E79")
-    STEEL = colors.HexColor("#2E75B6")
-    DARK = colors.HexColor("#1E293B")
-    MUTED = colors.HexColor("#475569")
+    print("Parsing README.md into ReportLab flowable elements...")
+    story = parse_readme_to_flowables(readme_path, base_dir, styles)
+    print(f"Generated {len(story)} flowables from README.md.")
 
-    title_style = ParagraphStyle(
-        "CoverTitle",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=24,
-        textColor=NAVY,
-        spaceAfter=4,
-    )
-
-    subtitle_style = ParagraphStyle(
-        "CoverSubtitle",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=10.5,
-        leading=14,
-        textColor=STEEL,
-        spaceAfter=12,
-    )
-
-    h1_style = ParagraphStyle(
-        "Heading1_Custom",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=13,
-        leading=16,
-        textColor=NAVY,
-        spaceBefore=14,
-        spaceAfter=6,
-        keepWithNext=True,
-    )
-
-    h2_style = ParagraphStyle(
-        "Heading2_Custom",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=10.5,
-        leading=13,
-        textColor=STEEL,
-        spaceBefore=10,
-        spaceAfter=4,
-        keepWithNext=True,
-    )
-
-    body_style = ParagraphStyle(
-        "Body_Custom",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=8.5,
-        leading=11.5,
-        textColor=DARK,
-        spaceAfter=5,
-    )
-
-    code_style = ParagraphStyle(
-        "Code_Custom",
-        parent=styles["Normal"],
-        fontName="Courier",
-        fontSize=7.5,
-        leading=9.5,
-        textColor=colors.HexColor("#0F172A"),
-        spaceBefore=3,
-        spaceAfter=5,
-    )
-
-    tbl_hdr_style = ParagraphStyle(
-        "TableHdr",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
-        textColor=colors.white,
-        alignment=0,
-    )
-
-    tbl_cell_style = ParagraphStyle(
-        "TableCell",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=7.5,
-        leading=9.5,
-        textColor=DARK,
-        alignment=0,
-    )
-
-    story = []
-
-    # -------------------------------------------------------------------------
-    # COVER / HEADER BANNER
-    # -------------------------------------------------------------------------
-    banner_data = [
-        [
-            Paragraph("<b>SMARTBUS TRANSIT SYSTEM</b>", ParagraphStyle("B1", fontName="Helvetica-Bold", fontSize=15, textColor=colors.white)),
-            Paragraph("<b>CPE106L PRACTICAL ASSESSMENT</b><br/>Software Engineering Specification & Architecture", ParagraphStyle("B2", fontName="Helvetica", fontSize=8, textColor=colors.HexColor("#D0E1FD"), alignment=2))
-        ]
-    ]
-    t_banner = Table(banner_data, colWidths=[330, 210])
-    t_banner.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), NAVY),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    story.append(t_banner)
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("System Requirements Specification, Architecture, Wireframes & Process Flowcharts", title_style))
-    story.append(Paragraph("<b>Architectural Heritage:</b> Harmonized design patterns from Lab 2, Lab 3, Lab 4, and Lab 5 • <b>Persistence:</b> SQLite3 ACID Engine", subtitle_style))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#CBD5E1"), spaceAfter=10))
-
-    # -------------------------------------------------------------------------
-    # SECTION 1: REQUIREMENTS SPECIFICATION
-    # -------------------------------------------------------------------------
-    story.append(Paragraph("1. System Requirements Specification Matrix", h1_style))
-    story.append(Paragraph(
-        "In accordance with software engineering principles, the system is designed around balanced "
-        "<b>Functional Requirements (FR)</b> and <b>Non-Functional Requirements (NFR)</b>:",
-        body_style,
-    ))
-
-    req_headers = [Paragraph("<b>Requirement Dimension</b>", tbl_hdr_style), Paragraph("<b>Functional Requirements (FR)</b>", tbl_hdr_style), Paragraph("<b>Non-Functional Requirements (NFR)</b>", tbl_hdr_style)]
-    req_rows = [
-        [
-            Paragraph("<b>Core Definition</b>", tbl_cell_style),
-            Paragraph("Define <b>what</b> the system should do (features & system functionality).", tbl_cell_style),
-            Paragraph("Define <b>how</b> the system should perform (quality attributes & constraints).", tbl_cell_style),
-        ],
-        [
-            Paragraph("<b>Operational Focus</b>", tbl_cell_style),
-            Paragraph("Focus on system behavior, user interaction, and transactional operations.", tbl_cell_style),
-            Paragraph("Focus on performance, security, data integrity, and code maintainability.", tbl_cell_style),
-        ],
-        [
-            Paragraph("<b>Scope of Actions</b>", tbl_cell_style),
-            Paragraph("Describes specific actions like route querying, seat booking, ticket issuance, and ticket cancellations.", tbl_cell_style),
-            Paragraph("Describes constraints like response times (&lt;100ms), input sanitization, and OOP extensibility.", tbl_cell_style),
-        ],
-        [
-            Paragraph("<b>Visibility</b>", tbl_cell_style),
-            Paragraph("Directly visible to commuters, ticket agents, and dispatchers.", tbl_cell_style),
-            Paragraph("Indirectly visible, governing underlying robustness, security, and architectural reliability.", tbl_cell_style),
-        ],
-        [
-            Paragraph("<b>Validation Metric</b>", tbl_cell_style),
-            Paragraph("Easier to measure (output-based validation e.g. ticket record generated, seat reserved).", tbl_cell_style),
-            Paragraph("Harder to measure, verified via automated test benchmarks and strict database constraint tests.", tbl_cell_style),
-        ],
-        [
-            Paragraph("<b>Design Driver</b>", tbl_cell_style),
-            Paragraph("Drives the core user workflows and interactive GUI features.", tbl_cell_style),
-            Paragraph("Influences database schema indexing (ACID SQLite), factory patterns, and class encapsulation.", tbl_cell_style),
-        ],
-        [
-            Paragraph("<b>Documentation Format</b>", tbl_cell_style),
-            Paragraph("Documented using use cases, user stories, and operational flowcharts.", tbl_cell_style),
-            Paragraph("Documented using technical schemas, data dictionaries, and performance criteria.", tbl_cell_style),
-        ],
-    ]
-    t_req = Table([req_headers] + req_rows, colWidths=[110, 215, 215])
-    t_req.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-    ]))
-    story.append(t_req)
-    story.append(Spacer(1, 8))
-
-    story.append(Paragraph("1.1 The 2 Functional Requirements (FR)", h2_style))
-    story.append(Paragraph(
-        "• <b>FR-1: Route Schedule Browsing & Interactive Seat Selection</b> — The system shall allow commuters and dispatchers "
-        "to browse intercity bus schedules (origin, destination, departure time, and base fare) and dynamically select an available seat "
-        "through an interactive 2×2 bus cabin layout with an aisle.",
-        body_style,
-    ))
-    story.append(Paragraph(
-        "• <b>FR-2: Booking Processing, Ticket Issuance & Lifecycle Cancellation</b> — The system shall process confirmed seat reservations "
-        "into persistent SQLite records, generate tamper-resistant verification codes, and support ticket cancellation with immediate seat inventory "
-        "release and audit logging.",
-        body_style,
-    ))
-
-    story.append(Paragraph("1.2 The 2 Non-Functional Requirements (NFR)", h2_style))
-    story.append(Paragraph(
-        "• <b>NFR-1: Security, Validation & Tamper Resistance</b> — All passenger inputs undergo strict sanitization. Contact numbers must conform "
-        "to standard mobile formats (<code>09XXXXXXXXX</code> or <code>+639XXXXXXXXX</code>). Concession fare discounts require mandatory verification "
-        "of official institutional/government ID credentials (minimum 4 characters). Every ticket is issued with an 8-character cryptographically salted "
-        "SHA-256 reference code (<code>BTK-[HEX]</code>) preventing counterfeiting.",
-        body_style,
-    ))
-    story.append(Paragraph(
-        "• <b>NFR-2: Maintainability, Clean Architecture & Double-Booking Prevention</b> — The codebase strictly enforces Object-Oriented encapsulation "
-        "(private <code>_</code> attributes, <code>@property</code> getters, and <code>@setter</code> validation raising <code>TypeError</code> or <code>ValueError</code>) "
-        "conforming to PEP 8 standards. At the database layer, an ACID-compliant SQLite schema with a partial unique index "
-        "(<code>ON tickets (route_id, travel_date, seat_number) WHERE status = 'Confirmed'</code>) mathematically guarantees zero double-booking.",
-        body_style,
-    ))
-
-    # -------------------------------------------------------------------------
-    # SECTION 2: UNIQUE USE CASE
-    # -------------------------------------------------------------------------
-    story.append(Paragraph("2. Unique System Use Case", h1_style))
-    story.append(Paragraph("<b>Interactive Visual Seat Layout Matrix with Senior/PWD Priority Allocation & Concession Discount Engine (UC-SMARTBUS-01)</b>", h2_style))
-    story.append(Paragraph(
-        "<b>Actor:</b> Commuter / Ticketing Counter Agent &nbsp;|&nbsp; <b>Precondition:</b> Routes & Fleet Buses initialized in SQLite.<br/>"
-        "<b>Workflow Narrative:</b><br/>"
-        "1. Dispatcher selects <i>RT-101: Manila (Cubao) &rarr; Baguio City</i> and travel date.<br/>"
-        "2. System draws the <b>Visual Cabin Seat Map</b>: Row 1 (Seats 1-4) is color-coded in <b>Amber</b> as <b>Priority Seating</b> "
-        "(Senior Citizens, PWDs, Pregnant), while Rows 2-6 are standard <b>Green</b>.<br/>"
-        "3. Selecting an available seat highlights it in <b>Blue</b> (<code>[✓]</code>). Non-priority commuters choosing Row 1 trigger a confirmation alert.<br/>"
-        "4. Selecting <b>Senior Citizen</b>, <b>PWD</b>, or <b>Student</b> dynamically unlocks the Concession ID input and applies a statutory <b>20% discount</b> "
-        "(Base PHP 580.00 &rarr; Net PHP 464.00).<br/>"
-        "5. Booking is committed to SQLite, seat status transitions to <b>Occupied [X]</b>, and an official printable boarding pass is issued.",
-        body_style,
-    ))
-
-    story.append(PageBreak())
-
-    # -------------------------------------------------------------------------
-    # SECTION 3: STANDARD PROCESS FLOWCHARTS (GENERIC SHAPES)
-    # -------------------------------------------------------------------------
-    story.append(Paragraph("3. Operational Process Flowcharts (Standard Flowchart Representation)", h1_style))
-    story.append(Paragraph(
-        "The following diagrams depict the operational workflows utilizing standard generic flowchart shapes: "
-        "<b>Terminator capsules</b> (Start/End), <b>Input/Output parallelograms</b>, <b>Process rectangles</b>, "
-        "<b>Decision diamonds</b> (Branching logic), and <b>Database cylinders</b> (SQLite queries):",
-        body_style,
-    ))
-
-    story.append(Paragraph("3.1 Standard Flowchart: Ticket Booking & Concession Allocation (FR-1 & Unique UC)", h2_style))
-    flowchart1_img = get_scaled_image(os.path.join(screenshots_dir, "flowchart_booking_process.png"), max_w=520, max_h=580)
-    if flowchart1_img:
-        story.append(flowchart1_img)
-
-    story.append(PageBreak())
-
-    story.append(Paragraph("3.2 Standard Flowchart: Atomic SQLite Commit & Ticket Cancellation (FR-2 & NFR-2)", h2_style))
-    story.append(Paragraph(
-        "Illustrates the atomic write transaction, double-booking rollback guard, and ticket cancellation lifecycle with instant seat restoration:",
-        body_style,
-    ))
-    flowchart2_img = get_scaled_image(os.path.join(screenshots_dir, "flowchart_cancellation_process.png"), max_w=520, max_h=580)
-    if flowchart2_img:
-        story.append(flowchart2_img)
-
-    story.append(PageBreak())
-
-    story.append(Paragraph("3.3 High-Level Layered Architecture & Relational Data Flow", h2_style))
-    story.append(Paragraph(
-        "Depicts the structural separation across the Presentation Layer (Tkinter GUI), Business Logic / Factory Layer, Data Access Layer (BusTicketingDatabase Singleton), and SQLite Persistence Engine:",
-        body_style,
-    ))
-    arch_img = get_scaled_image(os.path.join(screenshots_dir, "flowchart_system_architecture.png"), max_w=520, max_h=500)
-    if arch_img:
-        story.append(arch_img)
-
-    story.append(PageBreak())
-
-    # -------------------------------------------------------------------------
-    # SECTION 4: UI WIREFRAME BLUEPRINTS
-    # -------------------------------------------------------------------------
-    story.append(Paragraph("4. UI Wireframe Schematics & Layout Blueprints", h1_style))
-    story.append(Paragraph(
-        "Clean component wireframe schematics illustrating interface layout, buttons, dropdowns, tables, and the 2×2 seat map across all three tabs:",
-        body_style,
-    ))
-
-    story.append(Paragraph("4.1 Tab 1 Wireframe: Book Tickets & Visual Seat Map", h2_style))
-    w1_img = get_scaled_image(os.path.join(screenshots_dir, "wireframe_tab1_booking.png"), max_w=520, max_h=340)
-    if w1_img:
-        story.append(w1_img)
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("4.2 Tab 2 Wireframe: Manage Bookings & Audit Dossier", h2_style))
-    w2_img = get_scaled_image(os.path.join(screenshots_dir, "wireframe_tab2_management.png"), max_w=520, max_h=340)
-    if w2_img:
-        story.append(w2_img)
-
-    story.append(PageBreak())
-
-    story.append(Paragraph("4.3 Tab 3 Wireframe: System Overview & Fleet Analytics", h2_style))
-    w3_img = get_scaled_image(os.path.join(screenshots_dir, "wireframe_tab3_analytics.png"), max_w=520, max_h=340)
-    if w3_img:
-        story.append(w3_img)
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("4.4 Official SmartBus Boarding Pass Modal Dialog", h2_style))
-    pass_img = get_scaled_image(os.path.join(screenshots_dir, "06_boarding_pass_modal.png"), max_w=400, max_h=260)
-    if pass_img:
-        story.append(pass_img)
-
-    story.append(PageBreak())
-
-    # -------------------------------------------------------------------------
-    # SECTION 5: VERIFICATION TEST MATRIX
-    # -------------------------------------------------------------------------
-    story.append(Paragraph("5. Verification Test Suite Matrix (12/12 Passing)", h1_style))
-    story.append(Paragraph(
-        "The system was validated using an automated <code>unittest.TestCase</code> suite testing all functional and non-functional requirements:",
-        body_style,
-    ))
-
-    test_headers = [Paragraph("<b>Test ID</b>", tbl_hdr_style), Paragraph("<b>Test Method Name</b>", tbl_hdr_style), Paragraph("<b>Category</b>", tbl_hdr_style), Paragraph("<b>Verification Criteria</b>", tbl_hdr_style), Paragraph("<b>Status</b>", tbl_hdr_style)]
-    test_rows = [
-        [Paragraph("TC-01", tbl_cell_style), Paragraph("test_01_singleton_database_instance", tbl_cell_style), Paragraph("Architecture", tbl_cell_style), Paragraph("Verifies BusTicketingDatabase enforces Singleton pattern across calls.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-02", tbl_cell_style), Paragraph("test_02_sqlite_persistence_roundtrip", tbl_cell_style), Paragraph("Persistence", tbl_cell_style), Paragraph("Verifies SQLite CRUD operations for Routes, Buses, and Passengers.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-03", tbl_cell_style), Paragraph("test_03_route_validation_boundaries", tbl_cell_style), Paragraph("NFR-2", tbl_cell_style), Paragraph("Verifies positive distance and non-negative base fare constraints.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-04", tbl_cell_style), Paragraph("test_04_bus_seating_and_priority_validation", tbl_cell_style), Paragraph("NFR-2", tbl_cell_style), Paragraph("Verifies seating bounds and priority seat designations.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-05", tbl_cell_style), Paragraph("test_05_passenger_contact_format_validation", tbl_cell_style), Paragraph("NFR-1", tbl_cell_style), Paragraph("Verifies mobile contact regex sanitization (09XXXXXXXXX).", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-06", tbl_cell_style), Paragraph("test_06_mandatory_concession_id_validation_nfr1", tbl_cell_style), Paragraph("NFR-1", tbl_cell_style), Paragraph("Verifies mandatory concession ID check for Senior, PWD, and Student.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-07", tbl_cell_style), Paragraph("test_07_senior_priority_seat_and_concession_discount", tbl_cell_style), Paragraph("Unique UC", tbl_cell_style), Paragraph("Verifies Row 1 priority seat booking with statutory 20% discount.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-08", tbl_cell_style), Paragraph("test_08_regular_passenger_full_fare", tbl_cell_style), Paragraph("FR-1", tbl_cell_style), Paragraph("Verifies regular passengers receive standard undiscounted fare.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-09", tbl_cell_style), Paragraph("test_09_tamper_resistant_reference_code_format_nfr1", tbl_cell_style), Paragraph("NFR-1", tbl_cell_style), Paragraph("Verifies cryptographically salted SHA-256 reference codes (BTK-XXXXXX).", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-10", tbl_cell_style), Paragraph("test_10_atomic_double_booking_prevention_nfr2", tbl_cell_style), Paragraph("NFR-2", tbl_cell_style), Paragraph("Verifies duplicate seat booking raises ValueError & rolls back transaction.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-11", tbl_cell_style), Paragraph("test_11_ticket_cancellation_releases_seat_fr2", tbl_cell_style), Paragraph("FR-2", tbl_cell_style), Paragraph("Verifies cancelled ticket releases seat for immediate re-booking.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-        [Paragraph("TC-12", tbl_cell_style), Paragraph("test_12_analytics_calculation", tbl_cell_style), Paragraph("Metrics", tbl_cell_style), Paragraph("Verifies gross revenue, ticket counters, and subsidy calculations.", tbl_cell_style), Paragraph("<b>PASS</b>", tbl_cell_style)],
-    ]
-    t_test = Table([test_headers] + test_rows, colWidths=[40, 160, 65, 230, 45])
-    t_test.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-        ("TEXTCOLOR", (4, 1), (4, -1), colors.HexColor("#16A34A")),
-    ]))
-    story.append(t_test)
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Unit Test Execution Console Output:", h2_style))
-    test_img = get_scaled_image(os.path.join(screenshots_dir, "09_unit_tests_pass.png"), max_w=520, max_h=300)
-    if test_img:
-        story.append(test_img)
-
-    # Build Document with NumberedCanvas
+    print(f"Compiling publication PDF to: {output_pdf}")
     doc.build(story, canvasmaker=NumberedCanvas)
-    print(f"PDF build complete: {output_pdf}")
+    print(f"Successfully compiled PDF: {output_pdf}")
 
-    # Also save a copy as README.pdf
     import shutil
     shutil.copyfile(output_pdf, readme_pdf)
-    print(f"Copied to: {readme_pdf}")
+    print(f"Synchronized copy to: {readme_pdf}")
 
 
 if __name__ == "__main__":
-    generate_pdf()
+    export_readme_to_pdf()
